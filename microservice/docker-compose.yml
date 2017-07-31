@@ -1,0 +1,20 @@
+employee:
+ build: Employee
+ ports:
+  - "8080"
+ links:
+  - mongodb
+reward:
+ build: Reward
+ ports:
+  - "8080"
+ links:
+  - mongodb
+mission:
+ build: Mission
+ ports:
+  - "8080"
+ links:
+  - mongodb
+mongodb:
+ image: mongo
