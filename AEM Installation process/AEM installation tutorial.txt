@@ -1,0 +1,78 @@
+AEM installation
+
+1) Pre-requisites
+	- firewalld service must be enabled and correctly configured as per follows:
+		- firewall-cmd --add-port=4502/tcp --permanent
+		- firewall-cmd --add-port=4503/tcp --permanent
+		- firewall-cmd --reload
+	
+	- java must be installed
+
+2) Installation process
+	AEM has two instances to work, Author and Publish instance. Although there is only one jar file, the installation process relies on the name convention
+	the jar file has, in order to install Author instance it will be required to rename jar file as per follows:
+		- cq-<instance>-p<port>.jar
+		e.g. cq-author-p4502.jar (In this case I want to install Author instance through port 4502)
+	2.1) Author instance:
+		 2.1.1) Create a folder within /opt named "aem", optionally a sub-folder can be created named as per the instance you'd like to install, in this particular
+		 case I'll be using "author", finally I'll have a path as follows:
+			e.g. /opt/aem/author
+		 2.1.2) Within this recently created folder I'll be placing the jar file (as this is the author sub-folder I would recommend to place the author jar file),
+		    e.g. /opt/aem/author/cq-author-p4502.jar
+		 * If this is the very first time the application gets executed you will be promped into a webpage where a lincence number would be required in order to proceed,
+		 place this license number and a lincense.properties file would be created automaticlly just aside the jar file (in this particular case within /opt/aem/author),
+		 this can be reused in order to avoid this step in future.
+		 2.1.3) Execute jar file with following command:
+			java -XX:MaxPermSize=256m -Xmx1024M -jar <jar file>
+			e.g. java -XX:MaxPermSize=256m -Xmx1024M -jar cq-author-p4502.jar
+		 This execution would start instance on port selected (this case port 4502), you might want to go a check (it may take 5-10 min depending on your machine),
+		 once you see AEM's content you can do a Cntrl+c in order to exit process which would stop instance as well.
+		 2.1.4) A new folder would be created if previous step was performed correctly (crx-quickstart), go inside this folder and you may now find a "bin" folder where
+		 you can find an start/stop triggers in order to start and stop the instance, these two files are now up to date and can be used directly to start and stop
+		 instance. Forward, there is on the same folder (crx-quickstart) a "logs" folder to monitor the start and the stop logs just in case you have doubts about the
+		 start-up process (stdout.log).
+		
+	2.2) Publish Instance:
+		 2.2.1) Create a sub-folder within "aem" folder named "publish", should look like as follows:
+			- /opt/aem/publish
+		 2.2.2) Within this new folder place either a copy or same jar file used to install "Author Instance", just rename it as per follows:
+			- /opt/aem/publish/cq-publish-p4503.jar
+		 * If you have doubts on why the name convention please go through step 2 again.
+		 2.2.3) Execute jar file as per step 2.1.3 explains, just remember to copy your license.properties file created on previous installation
+		  in the same location where your jar file is located at. (In this particular case would be within /opt/aem/publish).
+		 2.2.4) Once application is up and running by executing following command on jar file:
+			e.g. java -XX:MaxPermSize=256m -Xmx1024M -jar cq-publish-p4503.jar (This because I want my publish instance be shown on port 4503)
+		 You may now press Cntrl+c in order to stop application and move within the recently created folder (crx-quickstart) and modify "start" script.
+		  - Using your text editor find these two code lines:
+			# TCP port used for stop and status scripts
+			  if [ -z "$CQ_PORT" ]; then
+              CQ_PORT=4502
+              fi
+			  
+			# runmode(s)                                       
+            # will not be used if repository is already present
+            if [ -z "$CQ_RUNMODE" ]; then                      
+                    CQ_RUNMODE='author'                       
+            fi
+			
+			Make the proper changes in order to adapt it to start publish instance, do as follows:
+			
+			# TCP port used for stop and status scripts
+			  if [ -z "$CQ_PORT" ]; then
+              CQ_PORT=4503
+              fi
+			  
+			# runmode(s)                                       
+            # will not be used if repository is already present
+            if [ -z "$CQ_RUNMODE" ]; then                      
+                    CQ_RUNMODE='publish'                       
+            fi
+			
+			*This way we will be using port 4503 to start the publish instance, exit/save text editor and test "start" script. If steps were performed correctly
+			you should see once again content was shown when executed through java application the very first time.
+			
+			
+
+References: https://docs.adobe.com/docs/en/aem/6-2/deploy.html
+
+** Please remember the jar file must be obtained through Adobe's authorization with a proper license number.

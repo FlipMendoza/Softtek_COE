@@ -1,0 +1,18 @@
+FROM ubuntu
+
+RUN apt-get update
+RUN apt-get install -y git
+RUN mkdir /root/.chef
+WORKDIR /root/.chef/
+RUN git clone https://github.com/FlipMendoza/chef.git
+RUN dpkg -i chef/chef_12.1.0-1_amd64.deb
+RUN mkdir /root/.chef/trusted_certs
+COPY admin.pem /root/.chef/admin.pem
+COPY chef-validator.pem /root/.chef/admin
+COPY chef-webui.pem /root/.chef/chef-webui.pem
+COPY jenkins.pem /root/.chef/jenkins.pem
+COPY knife.rb /root/.chef/knife.rb
+COPY chef-server.crt /root/.chef/trusted_certs/chef-server.crt
+WORKDIR /root/.chef/chef/
+
+CMD /bin/bash

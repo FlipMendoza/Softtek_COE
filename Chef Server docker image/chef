@@ -1,0 +1,12 @@
+FROM ubuntu:12.04
+
+MAINTAINER Felipe Mendoza <luis.mendoza@softtek.com>
+
+RUN apt-get update && apt-get install -y wget
+RUN wget --no-check-certificate https://packages.chef.io/files/stable/chef-server/11.1.6/ubuntu/12.04/chef-server_11.1.6-1_amd64.deb
+RUN dpkg-divert --local --rename --add /sbin/initctl
+RUN ln -sf /bin/true /sbin/initctl
+RUN dpkg -i chef-server_11.1.6-1_amd64.deb
+COPY mute.sh /
+
+CMD ["sh", "/mute.sh"]

@@ -1,0 +1,369 @@
+1) Create docker container with sql client
+Download
+	You'll need at least three RPM files. Go to http://www.oracle.com/technetwork/database/features/instant-client/index... and, 
+	once you have accepted the "License Agreement", download "Basic", "SQL*Plus" and the "SDK" RPMs.
+	In my case (Ubuntu 14.04 LTS, Intel on 64-bit) my downloaded files were:
+
+	oracle-instantclient12.1-sqlplus-12.1.0.2.0-1.x86_64.rpm
+	oracle-instantclient12.1-basic-12.1.0.2.0-1.x86_64.rpm
+	oracle-instantclient12.1-basic-12.1.0.2.0-1.x86_64.rpm
+	
+Convert and Install
+
+	In order to convert from .rpm to .deb, you'll need alien:
+
+	$ sudo apt-get install alien
+	Now convert and install the packages in this order:
+
+	$ sudo alien -i oracle-instantclient12.1-sqlplus-12.1.0.2.0-1.x86_64.rpm
+	$ sudo alien -i oracle-instantclient12.1-basic-12.1.0.2.0-1.x86_64.rpm
+	$ sudo alien -i oracle-instantclient12.1-devel-12.1.0.2.0-1.x86_64.rpm
+	
+Test & Fix
+
+	Test your Oracle client. User either sqlplus either sqlplus64 depending on your platform:
+
+	$ sqlplus64 username/password@//dbhost:1521/SID
+	If sqlplus yields of a missing libaio.so.1 file, run:
+
+	$ sudo apt-get install libaio1
+	If you get the next message, then you need to instruct sqlplus to use the proper libray:
+
+	sqlplus64: error while loading shared libraries: libsqlplus.so: cannot open shared object file: No such file or directory
+	To do so, first find the location of Oracle libraries. The path should be something like /usr/lib/oracle/<version>/client(64)/lib/. 
+	In my case (Ubuntu 14.04 LTS, Intel on 64-bit), it was /usr/lib/oracle/12.1/client64/lib/.
+
+	Now, add this path to the system library list. Create and edit a new file:
+
+	$ sudo nano /etc/ld.so.conf.d/oracle.conf
+		Add inside the path:
+
+		/usr/lib/oracle/12.1/client64/lib/
+		Run now the dynamic linker run-time bindings utility:
+
+		$ sudo ldconfig
+		
+2) Create a docker container capable of interact through ssh:
+
+Build an eg_sshd image
+The following Dockerfile sets up an SSHd service in a container that you can use to connect to and inspect other container’s volumes, 
+or to get quick access to a test container.
+
+	FROM ubuntu:16.04
+	MAINTAINER Sven Dowideit <SvenDowideit@docker.com>
+
+	RUN apt-get update && apt-get install -y openssh-server
+	RUN mkdir /var/run/sshd
+	RUN echo 'root:screencast' | chpasswd
+	RUN sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+	# SSH login fix. Otherwise user is kicked off after login
+	RUN sed 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so@g' -i /etc/pam.d/sshd
+
+	ENV NOTVISIBLE "in users profile"
+	RUN echo "export VISIBLE=now" >> /etc/profile
+
+	EXPOSE 22
+	CMD ["/usr/sbin/sshd", "-D"]
+
+3) Create a docker container with sql server provider:
+
+Obtaining the required files
+
+	Now that Docker is up and running we can start building the image. As mentioned above we first need the Oracle install binaries and the Docker build files, both are easy to obtain. For the Oracle binaries just download them from where you usually download them, Oracle Technology Network is probably the place that most people go to. Once we have downloaded them we can proceed with building the image. For all following steps we use the oracle Linux user:
+
+	[oracle@localhost ~]$ ls -al
+	total 2625120
+	drwx------. 15 oracle oracle       4096 Jul 22 13:21 .
+	drwxr-xr-x.  3 root   root           19 Mar 25 20:03 ..
+	-rw-------.  1 oracle oracle        566 Mar 25 20:52 .bash_history
+	-rw-r--r--.  1 oracle oracle         18 Sep 11  2015 .bash_logout
+	-rw-r--r--.  1 oracle oracle        193 Sep 11  2015 .bash_profile
+	-rw-r--r--.  1 oracle oracle        231 Sep 11  2015 .bashrc
+	drwx------. 10 oracle oracle       4096 Mar 25 19:06 .cache
+	drwxr-xr-x. 15 oracle oracle       4096 Mar 25 19:06 .config
+	drwxr-xr-x.  2 oracle oracle          6 Mar 25 19:05 Desktop
+	drwxr-xr-x.  2 oracle oracle          6 Mar 25 19:05 Documents
+	drwxr-xr-x.  2 oracle oracle          6 Mar 25 19:05 Downloads
+	-rw-------.  1 oracle oracle         16 Mar 25 19:05 .esd_auth
+	-rw-------.  1 oracle oracle       4030 Mar 25 20:48 .ICEauthority
+	-rw-------.  1 oracle oracle         57 Mar 25 19:55 .lesshst
+	-rw-r--r--.  1 oracle oracle 1673544724 Jul 22 13:21 linuxamd64_12102_database_1of2.zip
+	-rw-r--r--.  1 oracle oracle 1014530602 Jul 22 13:22 linuxamd64_12102_database_2of2.zip
+	drwx------.  3 oracle oracle         18 Mar 25 19:05 .local
+	drwxr-xr-x.  4 oracle oracle         37 Mar 25 19:40 .mozilla
+	drwxr-xr-x.  2 oracle oracle          6 Mar 25 19:05 Music
+	drwxr-xr-x.  2 oracle oracle          6 Mar 25 19:05 Pictures
+	drwxr-xr-x.  2 oracle oracle          6 Mar 25 19:05 Public
+	drwx------.  2 oracle oracle          6 Mar 25 19:33 .ssh
+	drwxr-xr-x.  2 oracle oracle          6 Mar 25 19:05 Templates
+	drwxr-xr-x.  2 oracle oracle          6 Mar 25 19:05 Videos
+
+Next we have to download the Docker build files. There are various ways to do this. We can for example clone the Git repository directly. But for simplicity and for the people who aren't familiar with git, we will just use the download option on Github itself. If we go to the main repository URL https://github.com/oracle/docker-images/ we will see a green button saying "Clone or download" and by clicking on it we will have the option "Download ZIP". Alternatively we can just download the repository directly via the static URL: https://github.com/oracle/docker-images/archive/master.zip
+
+	[oracle@localhost ~]$ wget https://github.com/oracle/docker-images/archive/master.zip
+	--2016-07-22 13:30:14--  https://github.com/oracle/docker-images/archive/master.zip
+	Resolving github.com (github.com)... 192.30.253.112
+	Connecting to github.com (github.com)|192.30.253.112|:443... connected.
+	HTTP request sent, awaiting response... 302 Found
+	Location: https://codeload.github.com/oracle/docker-images/zip/master [following]
+	--2016-07-22 13:30:14--  https://codeload.github.com/oracle/docker-images/zip/master
+	Resolving codeload.github.com (codeload.github.com)... 192.30.253.120
+	Connecting to codeload.github.com (codeload.github.com)|192.30.253.120|:443... connected.
+	HTTP request sent, awaiting response... 200 OK
+	Length: 4064219 (3.9M) [application/zip]
+	Saving to: ‘master.zip’
+
+	100%[===========================================================================================>] 4,064,219    393KB/s   in 6.9s
+
+	2016-07-22 13:30:21 (577 KB/s) - ‘master.zip’ saved [4064219/4064219]
+
+Once we have downloaded the zip we just extract it:
+
+	[oracle@localhost ~]$ unzip master.zip
+	Archive:  master.zip
+	ce91c58275d24df32b3f5d3b8a68000ade61d562
+      creating: docker-images-master/
+	extracting: docker-images-master/.gitattributes
+	inflating: docker-images-master/.gitignore
+	inflating: docker-images-master/.gitmodules
+	...
+	...
+	...
+	inflating: docker-images-master/README.md
+	[oracle@localhost ~]$
+
+Building the Oracle Database Docker image
+
+	Now that we have all the files it's time to build the Docker image. You will find a separate README.md in the docker-images-master/OracleDatabase directory which explains the build process in more details. You will also find a buildDockerImage.sh shell script in the docker-images-master/OracleDatabase/dockerfiles directory that does the legwork of the build for us. For the build it is essential that we copy the install files into the correct version directory. As we are going to create an Oracle Database 12.1.0.2 EE image we need to copy the files into docker-images-master/OracleDatabase/dockerfiles/12.1.0.2:
+
+	[oracle@localhost ~]$ cd docker-images-master/OracleDatabase/dockerfiles/12.1.0.2/
+	[oracle@localhost 12.1.0.2]$ cp ~/linuxamd64_12102_database_* .
+	[oracle@localhost 12.1.0.2]$ ls -al
+	total 2625144
+	drwxrwxr-x. 2 oracle oracle       4096 Jul 22 13:50 .
+	drwxrwxr-x. 4 oracle oracle         62 Jul 21 14:07 ..
+	-rw-rw-r--. 1 oracle oracle        515 Jul 21 14:07 Checksum.ee
+	-rw-rw-r--. 1 oracle oracle        523 Jul 21 14:07 Checksum.se2
+	-rw-rw-r--. 1 oracle oracle      12738 Jul 21 14:07 dbca.rsp
+	-rw-rw-r--. 1 oracle oracle       9118 Jul 21 14:07 db_inst.rsp
+	-rw-rw-r--. 1 oracle oracle       5491 Jul 21 14:07 Dockerfile.ee
+	-rw-rw-r--. 1 oracle oracle       5508 Jul 21 14:07 Dockerfile.se2
+	-rwxr-xr-x. 1 oracle oracle        773 Jul 21 14:07 installPerl.sh
+	-rw-r--r--. 1 oracle oracle 1673544724 Jul 22 13:50 linuxamd64_12102_database_1of2.zip
+	-rw-r--r--. 1 oracle oracle 1014530602 Jul 22 13:50 linuxamd64_12102_database_2of2.zip
+	-rwxr-xr-x. 1 oracle oracle        120 Jul 21 14:07 runOracle.sh
+
+Now we are ready to invoke the buildDockerImage.sh shell script. The script takes a couple of parameters, -v for the version and -e for telling it that we want Enterprise Edition. As Docker is running under root we need to have root privileges to communicate with the docker daemon. We can do that via sudo as the oracle user is already in the list of sudoers:
+
+	[oracle@localhost 12.1.0.2]$ cd ..
+	[oracle@localhost dockerfiles]$ sudo ./buildDockerImage.sh -v 12.1.0.2 -e
+	[sudo] password for oracle:
+	Checking if required packages are present and valid...
+	linuxamd64_12102_database_1of2.zip: OK
+	linuxamd64_12102_database_2of2.zip: OK
+	=====================
+	Building image 'oracle/database:12.1.0.2-ee' ...
+	Sending build context to Docker daemon 2.688 GB
+	Step 1 : FROM oraclelinux:latest
+	---> 1988eb5b3fc6
+	Step 2 : MAINTAINER Gerald Venzl <gerald.venzl@oracle.com>
+	---> Running in eb5c7e020eab
+	---> a84c75296503
+	Removing intermediate container eb5c7e020eab
+	...
+	...
+	...
+	Step 17 : CMD $ORACLE_BASE/$RUN_FILE
+	---> Running in 24afd4ce02ff
+	---> 86f7f548d4ad
+	Removing intermediate container 24afd4ce02ff
+	Successfully built 86f7f548d4ad
+
+	Oracle Database Docker Image for 'ee' version 12.1.0.2 is ready to be extended:
+
+    --> oracle/database:12.1.0.2-ee
+
+	Build completed in 747 seconds.
+
+	[oracle@localhost dockerfiles]$
+
+	Starting and connecting to the Oracle Database in a Docker container
+
+Once the build was successful we can now start and run the Oracle Database inside a Docker container. All we have to do is to issue the docker run command and pass in the appropriate parameters. One important parameter is the -p for the mapping of ports inside the container to the outside world. This is of course required so that we can also connect to the database outside the Docker container. Another useful parameter is the --name parameter which allows us to give our newly created Docker container a name defined by us. By doing so we can refer to the container via that name rather than the automatically generated ID/name:
+
+	[oracle@localhost dockerfiles]$ sudo docker run -p 1521:1521 --name gvenzl oracle/database:12.1.0.2-ee
+	ORACLE AUTO GENERATED PASSWORD FOR SYS, SYSTEM AND PDBAMIN: /CKddyDNIGI=
+
+	LSNRCTL for Linux: Version 12.1.0.2.0 - Production on 22-AUG-2016 22:36:38
+
+	Copyright (c) 1991, 2014, Oracle.  All rights reserved.
+
+	Starting /opt/oracle/product/12.1.0.2/dbhome_1/bin/tnslsnr: please wait...
+
+	TNSLSNR for Linux: Version 12.1.0.2.0 - Production
+	System parameter file is /opt/oracle/product/12.1.0.2/dbhome_1/network/admin/listener.ora
+	Log messages written to /opt/oracle/diag/tnslsnr/6838551f92a9/listener/alert/log.xml
+	Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=ipc)(KEY=EXTPROC1)))
+	Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))
+
+	Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=IPC)(KEY=EXTPROC1)))
+	STATUS of the LISTENER
+	------------------------
+	Alias                     LISTENER
+	Version                   TNSLSNR for Linux: Version 12.1.0.2.0 - Production
+	Start Date                22-AUG-2016 22:36:39
+	Uptime                    0 days 0 hr. 0 min. 1 sec
+	Trace Level               off
+	Security                  ON: Local OS Authentication
+	SNMP                      OFF
+	Listener Parameter File   /opt/oracle/product/12.1.0.2/dbhome_1/network/admin/listener.ora
+	Listener Log File         /opt/oracle/diag/tnslsnr/6838551f92a9/listener/alert/log.xml
+	Listening Endpoints Summary...
+		(DESCRIPTION=(ADDRESS=(PROTOCOL=ipc)(KEY=EXTPROC1)))
+		(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))
+	The listener supports no services
+	The command completed successfully
+	Copying database files
+	1% complete
+	2% complete
+	27% complete
+	Creating and starting Oracle instance
+	29% complete
+	32% complete
+	33% complete
+	34% complete
+	38% complete
+	42% complete
+	43% complete
+	45% complete
+	Completing Database Creation
+	48% complete
+	51% complete
+	53% complete
+	62% complete
+	64% complete
+	72% complete
+	Creating Pluggable Databases
+	78% complete
+	100% complete
+	Look at the log file "/opt/oracle/cfgtoollogs/dbca/ORCLCDB/ORCLCDB.log" for further details.
+
+	SQL*Plus: Release 12.1.0.2.0 Production on Mon Aug 22 22:47:43 2016
+
+	Copyright (c) 1982, 2014, Oracle.  All rights reserved.
+
+
+	Connected to:
+	Oracle Database 12c Enterprise Edition Release 12.1.0.2.0 - 64bit Production
+	With the Partitioning, OLAP, Advanced Analytics and Real Application Testing options
+
+	SQL>
+	Pluggable database altered.
+
+	SQL> Disconnected from Oracle Database 12c Enterprise Edition Release 12.1.0.2.0 - 64bit Production
+	With the Partitioning, OLAP, Advanced Analytics and Real Application Testing options
+	#########################
+	DATABASE IS READY TO USE!
+	#########################
+
+	XDB initialized.
+	Mon Aug 22 22:47:38 2016
+	Resize operation completed for file# 4, old size 240640K, new size 245760K
+	Mon Aug 22 22:47:41 2016
+	Thread 1 advanced to log sequence 15 (LGWR switch)
+		Current log# 3 seq# 15 mem# 0: /opt/oracle/oradata/ORCLCDB/redo03.log
+	Mon Aug 22 22:47:43 2016
+		ALTER PLUGGABLE DATABASE ORCLPDB1 SAVE STATE
+	Completed:       ALTER PLUGGABLE DATABASE ORCLPDB1 SAVE STATE
+	Mon Aug 22 22:47:54 2016
+	Shared IO Pool defaulting to 80MB. Trying to get it from Buffer Cache for process 1102.
+
+On the very first startup of the container a new database is being created. Subsequent startups of the same container just start up the database again. For convenience purposes the container startup script also runs a tail -f on the Oracle Database alert.log file. This is done for convenience purposes only so that any potential issues can be easily spotted. Once you see the line DATABASE IS READY TO USE! in the output you can connect to the database. Note that the startup script also generated a password for the database admin accounts. You can find the password next to the line ORACLE AUTO GENERATED PASSWORD FOR SYS, SYSTEM AND PDBAMIN: in the output. You can either use that password going forward or you can reset it to a password of your choice. The container provides a script called setPassword.sh for resetting the password. In a new shell just execute following command against the running container:
+
+	[oracle@localhost ~]$ sudo docker exec gvenzl ./setPassword.sh LetsDocker
+	[sudo] password for oracle:
+	The Oracle base remains unchanged with value /opt/oracle
+
+	SQL*Plus: Release 12.1.0.2.0 Production on Mon Aug 22 22:50:05 2016
+
+	Copyright (c) 1982, 2014, Oracle.  All rights reserved.
+
+
+	Connected to:
+	Oracle Database 12c Enterprise Edition Release 12.1.0.2.0 - 64bit Production
+	With the Partitioning, OLAP, Advanced Analytics and Real Application Testing options
+
+	SQL>
+	User altered.
+
+	SQL>
+	User altered.
+
+	SQL>
+	Session altered.
+
+	SQL>
+	User altered.
+
+	SQL> Disconnected from Oracle Database 12c Enterprise Edition Release 12.1.0.2.0 - 64bit Production
+	With the Partitioning, OLAP, Advanced Analytics and Real Application Testing options
+
+	Now that the container is running, the port 1521 mapped to the outside world and we have reset the password we can just connect to the database inside the container:
+
+	[oracle@localhost ~]$ sql system/LetsDocker@//localhost:1521/ORCLPDB1
+
+	SQLcl: Release 4.2.0.16.175.1027 RC on Mon Aug 22 15:50:59 2016
+
+	Copyright (c) 1982, 2016, Oracle.  All rights reserved.
+
+	Last Successful login time: Mon Aug 22 2016 15:51:00 -07:00
+
+	Connected to:
+	Oracle Database 12c Enterprise Edition Release 12.1.0.2.0 - 64bit Production
+	With the Partitioning, OLAP, Advanced Analytics and Real Application Testing options
+
+
+	SQL> grant connect, resource to gvenzl identified by supersecretpwd;
+
+	Grant succeeded.
+
+	SQL> conn gvenzl/supersecretpwd@//localhost:1521/ORCLPDB1
+	Connected.
+	
+	
+General Notes: 
+
+References:
+	1) http://webikon.com/cases/installing-oracle-sql-plus-client-on-ubuntu
+	2) https://docs.docker.com/engine/examples/running_ssh_service/
+	3) https://blogs.oracle.com/developer/entry/creating_and_oracle_database_docker
+	4) https://blogs.sap.com/wp-content/uploads/2016/03/foodcritic_postbuild_911693.png
+	5) https://www.howtoforge.com/tutorial/ubuntu-nagios/
+
+Important to know:
+3) While creatin the docker image through the bash script it is important to be aware it requires at least 15 GB for the docker container to be built,
+	this can be achieved by adding a command line to the reboot docker daemon configuration as follows:
+		[root@localhost ~]# cat /etc/sysconfig/docker-storage
+		# This file may be automatically generated by an installation program.
+
+		# By default, Docker uses a loopback-mounted sparse file in
+		# /var/lib/docker.  The loopback makes it slower, and there are some
+		# restrictive defaults, such as 100GB max storage.
+
+		# If your installation did not set a custom storage for Docker, you
+		# may do it below.
+
+		# Example: Use a custom pair of raw logical volumes (one for metadata,
+		# one for data).
+		# DOCKER_STORAGE_OPTIONS = --storage-opt dm.metadatadev=/dev/mylogvol/my-docker-metadata --storage-opt dm.datadev=/dev/mylogvol/my-docker-data
+
+		DOCKER_STORAGE_OPTIONS=--storage-opt dm.basesize=15G
+		
+	If a docker-machine is being utilized instead a dedicated Linux OS as per described in guide, I strongly recommend to recreate default VM with
+	more size, with next command:
+		docker-machine create --driver virtualbox --virtualbox-disk-size "100100" default <-- This would recreate default boot2docker machine with 100GB reserved,
+		this would allow any docker container run from this machine to have the 100 GB as availible space.
+		
+
+		
