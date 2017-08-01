@@ -1,19 +1,19 @@
 employee:
  build: Employee
  ports:
-  - "8080"
+  - "8081"
  links:
   - mongodb
 reward:
  build: Reward
  ports:
-  - "8080"
+  - "8082"
  links:
   - mongodb
 mission:
  build: Mission
  ports:
-  - "8080"
+  - "8083"
  links:
   - mongodb
 mongodb:
@@ -23,4 +23,16 @@ ha_employee:
  links:
    - employee
  ports:
-   - "8080:80"
+   - "8081:80"
+ha_reward:
+ image: tutum/haproxy
+ links:
+   - reward
+ ports:
+   - "8082:80"
+ha_mission:
+ image: tutum/haproxy
+ links:
+   - mission
+ ports:
+   - "8083:80"
