@@ -22,7 +22,7 @@ RUN source "/root/.sdkman/bin/sdkman-init.sh" && \
 ENV PATH $PATH:/root/.sdkman/candidates/gradle/current/bin
 
 WORKDIR /root/project
-ARG CACHE_DATE=2017-01-01
+ARG rebuild=false
 RUN git clone https://github.com/FlipMendoza/Softtek_COE.git
 
 WORKDIR /root/project/Softtek_COE/microservice/Employee
