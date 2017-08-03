@@ -36,4 +36,4 @@ RUN gradle build
 
 WORKDIR ../
 
-CMD docker-compose up -d ; docker-compose logs -f
+CMD docker-compose start ; docker-compose up -d ; docker-compose logs -f
